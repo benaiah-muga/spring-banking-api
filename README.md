@@ -1,8 +1,8 @@
-# 🏦 Banking System REST API
+# Banking System REST API
 
 A production-ready Spring Boot REST API for a banking system with JWT authentication, role-based access control, and clean layered architecture.
 
-## 🎯 Project Purpose
+## Project Purpose
 
 This project demonstrates a complete banking backend system. It showcases:
 
@@ -14,7 +14,7 @@ This project demonstrates a complete banking backend system. It showcases:
 - Global exception handling with meaningful error responses
 - Input validation using Jakarta Validation
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 src/main/java/com/banking/api/
