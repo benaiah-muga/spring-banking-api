@@ -21,18 +21,5 @@ public class UserController {
         UserResponse response = userService.getCurrentUserProfile();
         return ResponseEntity.ok(response);
     }
-
-    @GetMapping("/admin/users")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<List<UserResponse>> getAllUsers() {
-        List<UserResponse> users = userService.getAllUsers();
-        return ResponseEntity.ok(users);
-    }
-
-    @GetMapping("/admin/users/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<UserResponse> getUserById(@PathVariable Long id) {
-        UserResponse user = userService.getUserById(id);
-        return ResponseEntity.ok(user);
-    }
 }
+

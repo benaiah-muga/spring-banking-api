@@ -49,14 +49,5 @@ public class TransactionController {
         PagedResponse<TransactionResponse> transactions = transactionService.getTransactionHistory(accountId, pageable);
         return ResponseEntity.ok(transactions);
     }
-
-    @GetMapping("/admin/transactions")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<PagedResponse<TransactionResponse>> getAllTransactions(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        Pageable pageable = PageRequest.of(page, size);
-        PagedResponse<TransactionResponse> transactions = transactionService.getAllTransactions(pageable);
-        return ResponseEntity.ok(transactions);
-    }
 }
+

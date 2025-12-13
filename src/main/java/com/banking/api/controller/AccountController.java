@@ -86,12 +86,4 @@ public class AccountController {
         SpendingLimitResponse limits = statementService.setSpendingLimits(request);
         return ResponseEntity.ok(limits);
     }
-
-    @GetMapping("/admin/accounts")
-    @PreAuthorize("hasRole('ADMIN')")
-    @Operation(summary = "Get all accounts (Admin)", description = "Admin: Get all accounts in the system")
-    public ResponseEntity<List<AccountResponse>> getAllAccounts() {
-        List<AccountResponse> accounts = accountService.getAllAccounts();
-        return ResponseEntity.ok(accounts);
-    }
 }
