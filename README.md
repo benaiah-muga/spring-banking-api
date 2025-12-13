@@ -4,7 +4,7 @@ A production-ready Spring Boot REST API for a banking system with JWT authentica
 
 ## 🎯 Project Purpose
 
-This project demonstrates a complete banking backend system suitable for portfolio/CV purposes. It showcases:
+This project demonstrates a complete banking backend system. It showcases:
 
 - Clean layered architecture (Controller → Service → Repository)
 - JWT-based authentication & authorization
