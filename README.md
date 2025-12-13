@@ -102,7 +102,7 @@ mvn spring-boot:run
 
 The API will be available at `http://localhost:8080/api`
 
-## 📋 API Endpoints
+## API Endpoints
 
 ### Authentication
 | Method | Endpoint | Description |
@@ -139,7 +139,7 @@ The API will be available at `http://localhost:8080/api`
 |--------|----------|-------------|
 | GET | `/api/health` | Health check |
 
-## 📝 Sample API Requests
+## Sample API Requests
 
 ### Register User
 ```bash
@@ -197,7 +197,7 @@ curl -X POST http://localhost:8080/api/transactions/transfer \
   }'
 ```
 
-## 📊 Database Schema
+##  Database Schema
 
 ### Users Table
 | Column | Type | Constraints |
@@ -241,7 +241,7 @@ curl -X POST http://localhost:8080/api/transactions/transfer \
 - **Account Ownership:** Users can only access their own accounts
 - **Atomic Transactions:** Pessimistic locking for transfers
 
-## ☁️ Deployment (Render + Neon)
+## Deployment (Render + Neon)
 
 ### Environment Variables for Render
 
@@ -264,10 +264,6 @@ mvn clean package -DskipTests
 java -jar target/banking-api-1.0.0.jar
 ```
 
-## 📄 License
-
-This project is open-source and available for portfolio/educational purposes.
-
 ## 👤 Author
 
-Built for portfolio demonstration purposes.
+Muganzi Benaiah
