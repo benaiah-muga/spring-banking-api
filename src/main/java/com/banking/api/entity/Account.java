@@ -46,6 +46,16 @@ public class Account {
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
 
+    // Spending limits
+    @Column(precision = 19, scale = 2)
+    private BigDecimal dailyLimit;
+
+    @Column(precision = 19, scale = 2)
+    private BigDecimal monthlyLimit;
+
+    @Column(precision = 19, scale = 2)
+    private BigDecimal singleTransactionLimit;
+
     @OneToMany(mappedBy = "sourceAccount", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<Transaction> outgoingTransactions;
 
