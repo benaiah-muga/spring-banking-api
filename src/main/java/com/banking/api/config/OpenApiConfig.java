@@ -27,7 +27,7 @@ public class OpenApiConfig {
         return new OpenAPI()
                 .info(new Info()
                         .title("Banking System API")
-                        .description("Portfolio banking simulation API with JWT authentication, role-based access control, " +
+                        .description("Banking simulation API with JWT authentication, role-based access control, " +
                                 "and auditable transaction workflows. Uses fictional balances and is not connected to real banking systems.")
                         .version("1.0.0")
                         .contact(new Contact()

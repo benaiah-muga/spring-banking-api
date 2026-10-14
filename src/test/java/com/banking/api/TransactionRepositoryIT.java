@@ -120,7 +120,7 @@ class TransactionRepositoryIT {
         DepositRequest request = DepositRequest.builder()
                 .accountId(account.getId())
                 .amount(new BigDecimal("100.00"))
-                .description("Portfolio demo funding")
+                .description("Integration test funding")
                 .build();
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -247,7 +247,7 @@ class TransactionRepositoryIT {
 
     private String registerAndGetToken(String email) throws Exception {
         String body = objectMapper.writeValueAsString(java.util.Map.of(
-                "fullName", "Portfolio Demo",
+                "fullName", "Integration Test",
                 "email", email,
                 "password", "demo-password-1"));
         String response = mockMvc.perform(post("/api/auth/register")

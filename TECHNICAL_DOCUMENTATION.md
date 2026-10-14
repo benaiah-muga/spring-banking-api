@@ -17,7 +17,7 @@
 
 ## System Overview
 
-The Banking System API is a portfolio banking simulation built with Spring Boot 3.2. Balances use synthetic funds; the service does not connect to banks or payment networks.
+The Banking System API is a banking simulation built with Spring Boot 3.2. Balances use synthetic funds; the service does not connect to banks or payment networks.
 
 ### Key Capabilities
 

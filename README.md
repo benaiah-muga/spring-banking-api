@@ -1,8 +1,8 @@
 # Banking API
 
-A Java and Spring Boot banking simulation built to demonstrate authenticated account management and reliable money movement. It supports simulated deposits, withdrawals, transfers, account statements, spending controls, and admin audit review.
+A Java and Spring Boot banking simulation with authenticated account management and reliable money movement. It supports simulated deposits, withdrawals, transfers, account statements, spending controls, and admin audit review.
 
-This is a portfolio project. Balances are simulated funds. It does not connect to a payment network or provide a real banking service.
+Balances are simulated funds. The service does not connect to a payment network or provide a real banking service.
 
 ## Engineering highlights
 
@@ -30,7 +30,7 @@ mvn spring-boot:run
 
 The default `local` profile uses an in-memory H2 database and a local-only signing key. Data is reset when the application stops. Do not use this profile as a deployed environment.
 
-PostgreSQL mode, recommended for the complete demo:
+PostgreSQL mode, recommended for local integration testing:
 
 ```bash
 cp .env.example .env
@@ -42,7 +42,25 @@ Edit `.env` and replace both placeholder values. Make a signing secret with `ope
 docker compose up --build
 ```
 
-The API is at `http://localhost:8080/api`; Swagger UI is at `http://localhost:8080/swagger-ui/index.html`. Stop containers with `docker compose down`. Keep the PostgreSQL data volume by default; use `docker compose down -v` only when intentionally resetting the local demo database.
+The API is at `http://localhost:8080/api`; Swagger UI is at `http://localhost:8080/swagger-ui/index.html`. Stop containers with `docker compose down`. Keep the PostgreSQL data volume by default; use `docker compose down -v` only when intentionally resetting the local database.
+
+To connect the API to an existing local PostgreSQL server instead of the Compose database, create a dedicated login and empty database:
+
+```sql
+CREATE ROLE banking_api_app LOGIN PASSWORD '<choose-a-unique-password>';
+CREATE DATABASE banking_api_local OWNER banking_api_app;
+```
+
+Set `DATABASE_URL`, `DATABASE_USERNAME`, `DATABASE_PASSWORD`, and `JWT_SECRET` in `.env.local` using `.env.example` as a template, then start the API with the PostgreSQL profile:
+
+```bash
+set -a
+. ./.env.local
+set +a
+SPRING_PROFILES_ACTIVE=prod mvn spring-boot:run
+```
+
+The production profile will apply Flyway migrations to the configured database. Use a dedicated local database because its schema is managed by this application.
 
 The production profile requires `DATABASE_URL`, `DATABASE_USERNAME`, `DATABASE_PASSWORD`, and `JWT_SECRET`. It applies Flyway migrations and validates the mapped schema at startup. For an existing database, review and back up the schema first: Flyway baselines a non-empty schema at version 1 and applies the safety/idempotency migration. If the current schema differs from the documented model, reconcile it before startup. Configure `APP_TIME_ZONE` for the timezone used by spending-limit periods and `CORS_ALLOWED_ORIGINS` as a comma-separated list for any browser client.
 
@@ -54,7 +72,7 @@ mvn verify
 
 Unit tests run with Maven. PostgreSQL integration tests use Testcontainers and run when a Docker-compatible container runtime is available; CI runs them on GitHub Actions.
 
-## Demo flow
+## Example workflow
 
 1. Register two customers with `POST /api/auth/register` and log in with `POST /api/auth/login`.
 2. Create an account for each customer using `POST /api/accounts`.
@@ -77,12 +95,8 @@ curl -X POST http://localhost:8080/api/transactions/deposit \
 
 Transfer requests, limits, authorization, and error behavior are documented in [API_DOCUMENTATION.md](API_DOCUMENTATION.md). Architecture and database details are in [TECHNICAL_DOCUMENTATION.md](TECHNICAL_DOCUMENTATION.md).
 
-## Scope and next steps
+## Scope and limitations
 
-The project is single-currency and uses simulated funding. It does not implement a double-entry ledger, payment provider, token refresh/revocation, or a production bank compliance program. See [PORTFOLIO_ROADMAP.md](PORTFOLIO_ROADMAP.md) for the wider portfolio plan.
-
-## Portfolio summary
-
-**Banking API:** Java backend with JWT security, PostgreSQL persistence, atomic transfer processing, retry-safe requests, spending controls, and database integration tests.
+The service is single-currency and uses simulated funding. It does not implement a double-entry ledger, payment provider, token refresh or revocation, or a bank compliance program. See [PROJECT_ROADMAP.md](PROJECT_ROADMAP.md) for planned work.
 
 Author: Muganzi Benaiah
