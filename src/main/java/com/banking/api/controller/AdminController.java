@@ -2,11 +2,8 @@ package com.banking.api.controller;
 
 import com.banking.api.dto.request.UpdateAccountStatusRequest;
 import com.banking.api.dto.response.*;
-import com.banking.api.entity.Account;
 import com.banking.api.entity.AuditLog;
 import com.banking.api.enums.Role;
-import com.banking.api.exception.ResourceNotFoundException;
-import com.banking.api.repository.AccountRepository;
 import com.banking.api.repository.UserRepository;
 import com.banking.api.service.AdminService;
 import com.banking.api.service.AuditService;
@@ -18,12 +15,12 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import com.banking.api.util.PaginationSupport;
 
 import java.util.List;
 
@@ -38,7 +35,6 @@ public class AdminController {
     private final AdminService adminService;
     private final UserService userService;
     private final TransactionService transactionService;
-    private final AccountRepository accountRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
 
@@ -63,7 +59,7 @@ public class AdminController {
         Sort sort = sortDir.equalsIgnoreCase("desc") 
                 ? Sort.by(sortBy).descending() 
                 : Sort.by(sortBy).ascending();
-        Pageable pageable = PageRequest.of(page, size, sort);
+        Pageable pageable = PaginationSupport.page(page, size, sort);
 
         Role roleEnum = null;
         if (role != null && !role.isEmpty()) {
@@ -86,12 +82,11 @@ public class AdminController {
     }
 
     @GetMapping("/accounts")
-    @Operation(summary = "Get all accounts", description = "Returns a list of all bank accounts")
-    public ResponseEntity<List<AccountResponse>> getAllAccounts() {
-        List<Account> accounts = accountRepository.findAll();
-        List<AccountResponse> response = accounts.stream()
-                .map(AccountResponse::fromEntity)
-                .toList();
+    @Operation(summary = "Get all accounts", description = "Returns a paginated list of bank accounts")
+    public ResponseEntity<PagedResponse<AccountResponse>> getAllAccounts(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        PagedResponse<AccountResponse> response = adminService.getAllAccounts(page, size);
         return ResponseEntity.ok(response);
     }
 
@@ -100,18 +95,7 @@ public class AdminController {
     public ResponseEntity<AccountResponse> updateAccountStatus(
             @PathVariable Long id,
             @Valid @RequestBody UpdateAccountStatusRequest request) {
-        Account account = accountRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Account", "id", id));
-        
-        account.setStatus(request.getStatus());
-        Account updatedAccount = accountRepository.save(account);
-
-        // Log the action
-        auditService.logAccountAction("STATUS_CHANGED", id, 
-                "Status changed to " + request.getStatus() + 
-                (request.getReason() != null ? ". Reason: " + request.getReason() : ""));
-        
-        return ResponseEntity.ok(AccountResponse.fromEntity(updatedAccount));
+        return ResponseEntity.ok(adminService.updateAccountStatus(id, request));
     }
 
     @GetMapping("/transactions")
@@ -119,7 +103,7 @@ public class AdminController {
     public ResponseEntity<PagedResponse<TransactionResponse>> getAllTransactions(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = PaginationSupport.page(page, size);
         PagedResponse<TransactionResponse> transactions = transactionService.getAllTransactions(pageable);
         return ResponseEntity.ok(transactions);
     }
@@ -131,7 +115,7 @@ public class AdminController {
             @RequestParam(required = false) String entityType,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = PaginationSupport.page(page, size);
         Page<AuditLog> logs;
 
         if (userId != null) {

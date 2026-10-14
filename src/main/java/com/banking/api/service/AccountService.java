@@ -16,12 +16,14 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Random;
+import java.security.SecureRandom;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class AccountService {
+
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final AccountRepository accountRepository;
     private final UserService userService;
@@ -41,6 +43,7 @@ public class AccountService {
         return AccountResponse.fromEntity(savedAccount);
     }
 
+    @Transactional(readOnly = true)
     public List<AccountResponse> getMyAccounts() {
         User currentUser = userService.getCurrentUser();
         return accountRepository.findByUser(currentUser).stream()
@@ -48,6 +51,7 @@ public class AccountService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
     public AccountResponse getAccountById(Long accountId) {
         User currentUser = userService.getCurrentUser();
         Account account = accountRepository.findById(accountId)
@@ -61,6 +65,7 @@ public class AccountService {
         return AccountResponse.fromEntity(account);
     }
 
+    @Transactional(readOnly = true)
     public BalanceResponse getAccountBalance(Long accountId) {
         User currentUser = userService.getCurrentUser();
         Account account = accountRepository.findById(accountId)
@@ -74,6 +79,7 @@ public class AccountService {
         return BalanceResponse.of(account.getId(), account.getAccountNumber(), account.getBalance());
     }
 
+    @Transactional(readOnly = true)
     public List<AccountResponse> getAllAccounts() {
         return accountRepository.findAll().stream()
                 .map(AccountResponse::fromEntity)
@@ -103,12 +109,12 @@ public class AccountService {
 
     private String generateAccountNumber() {
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyMMddHHmmss"));
-        String random = String.format("%04d", new Random().nextInt(10000));
+        String random = String.format("%04d", SECURE_RANDOM.nextInt(10000));
         String accountNumber = timestamp + random;
         
         // Ensure uniqueness
         while (accountRepository.existsByAccountNumber(accountNumber)) {
-            random = String.format("%04d", new Random().nextInt(10000));
+            random = String.format("%04d", SECURE_RANDOM.nextInt(10000));
             accountNumber = timestamp + random;
         }
         

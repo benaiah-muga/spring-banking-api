@@ -8,22 +8,20 @@ import com.banking.api.entity.Transaction;
 import com.banking.api.entity.User;
 import com.banking.api.enums.TransactionType;
 import com.banking.api.exception.AccessDeniedException;
+import com.banking.api.exception.BadRequestException;
 import com.banking.api.exception.ResourceNotFoundException;
 import com.banking.api.repository.AccountRepository;
 import com.banking.api.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.util.ArrayList;
-import java.util.Comparator;
+import java.time.Clock;
 import java.util.List;
 
 @Service
@@ -34,8 +32,13 @@ public class StatementService {
     private final TransactionRepository transactionRepository;
     private final UserService userService;
     private final AuditService auditService;
+    private final Clock clock;
 
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public AccountStatementResponse generateStatement(Long accountId, LocalDate startDate, LocalDate endDate) {
+        if (startDate == null || endDate == null || endDate.isBefore(startDate)) {
+            throw new BadRequestException("Statement end date must be on or after its start date");
+        }
         User currentUser = userService.getCurrentUser();
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Account", "id", accountId));
@@ -46,16 +49,14 @@ public class StatementService {
         }
 
         LocalDateTime startDateTime = startDate.atStartOfDay();
-        LocalDateTime endDateTime = endDate.atTime(LocalTime.MAX);
+        LocalDateTime endExclusive = endDate.plusDays(1).atStartOfDay();
 
-        // Get all transactions for the account in the date range
-        Pageable pageable = PageRequest.of(0, 1000); // Get up to 1000 transactions
-        Page<Transaction> transactionPage = transactionRepository.findByAccountIdOrderByTimestampDesc(accountId, pageable);
-        
-        List<Transaction> periodTransactions = transactionPage.getContent().stream()
-                .filter(t -> !t.getTimestamp().isBefore(startDateTime) && !t.getTimestamp().isAfter(endDateTime))
-                .sorted(Comparator.comparing(Transaction::getTimestamp))
-                .toList();
+        long transactionCount = transactionRepository.countAccountTransactionsBetween(accountId, startDateTime, endExclusive);
+        if (transactionCount > 10_000) {
+            throw new BadRequestException("Statement period exceeds 10000 transactions; narrow the date range");
+        }
+        List<Transaction> periodTransactions = transactionRepository.findAccountTransactionsBetween(
+                accountId, startDateTime, endExclusive, PageRequest.of(0, 10_000));
 
         // Calculate totals
         BigDecimal totalDeposits = BigDecimal.ZERO;
@@ -63,8 +64,7 @@ public class StatementService {
         BigDecimal totalTransfersIn = BigDecimal.ZERO;
         BigDecimal totalTransfersOut = BigDecimal.ZERO;
 
-        List<AccountStatementResponse.StatementTransaction> statementTransactions = new ArrayList<>();
-        BigDecimal runningBalance = account.getBalance(); // We'll calculate backwards
+        List<AccountStatementResponse.StatementTransaction> statementTransactions = new java.util.ArrayList<>();
 
         // First pass: calculate totals
         for (Transaction t : periodTransactions) {
@@ -81,13 +81,13 @@ public class StatementService {
             }
         }
 
-        // Calculate opening balance (current balance - net change)
+        BigDecimal openingBalance = transactionRepository.calculateBalanceBefore(
+                accountId, startDateTime,
+                TransactionType.DEPOSIT, TransactionType.WITHDRAWAL, TransactionType.TRANSFER);
         BigDecimal netChange = totalDeposits.add(totalTransfersIn)
                 .subtract(totalWithdrawals).subtract(totalTransfersOut);
-        BigDecimal openingBalance = account.getBalance().subtract(netChange);
 
-        // Build statement transactions
-        runningBalance = openingBalance;
+        BigDecimal runningBalance = openingBalance;
         for (Transaction t : periodTransactions) {
             BigDecimal amount = t.getAmount();
             boolean isCredit = t.getType() == TransactionType.DEPOSIT ||
@@ -121,9 +121,9 @@ public class StatementService {
                 .accountType(account.getAccountType().name())
                 .statementPeriodStart(startDate)
                 .statementPeriodEnd(endDate)
-                .generatedAt(LocalDateTime.now())
+                .generatedAt(LocalDateTime.now(clock))
                 .openingBalance(openingBalance)
-                .closingBalance(account.getBalance())
+                .closingBalance(openingBalance.add(netChange))
                 .totalDeposits(totalDeposits)
                 .totalWithdrawals(totalWithdrawals)
                 .totalTransfersIn(totalTransfersIn)
@@ -136,7 +136,7 @@ public class StatementService {
     @Transactional
     public SpendingLimitResponse setSpendingLimits(SetSpendingLimitRequest request) {
         User currentUser = userService.getCurrentUser();
-        Account account = accountRepository.findById(request.getAccountId())
+        Account account = accountRepository.findByIdWithLock(request.getAccountId())
                 .orElseThrow(() -> new ResourceNotFoundException("Account", "id", request.getAccountId()));
 
         // Validate ownership
@@ -166,6 +166,7 @@ public class StatementService {
         return getSpendingLimits(account.getId());
     }
 
+    @Transactional(readOnly = true)
     public SpendingLimitResponse getSpendingLimits(Long accountId) {
         User currentUser = userService.getCurrentUser();
         Account account = accountRepository.findById(accountId)
@@ -177,8 +178,10 @@ public class StatementService {
         }
 
         // Calculate spent amounts for today and this month
-        BigDecimal dailySpent = calculateDailySpent(accountId);
-        BigDecimal monthlySpent = calculateMonthlySpent(accountId);
+        LocalDate today = LocalDate.now(clock);
+        LocalDateTime now = LocalDateTime.now(clock);
+        BigDecimal dailySpent = calculateSpent(accountId, today.atStartOfDay(), now.plusNanos(1));
+        BigDecimal monthlySpent = calculateSpent(accountId, today.withDayOfMonth(1).atStartOfDay(), now.plusNanos(1));
 
         BigDecimal dailyRemaining = account.getDailyLimit() != null 
                 ? account.getDailyLimit().subtract(dailySpent).max(BigDecimal.ZERO) 
@@ -200,30 +203,31 @@ public class StatementService {
                 .build();
     }
 
-    private BigDecimal calculateDailySpent(Long accountId) {
-        LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
-        Pageable pageable = PageRequest.of(0, 1000);
-        Page<Transaction> transactions = transactionRepository.findByAccountIdOrderByTimestampDesc(accountId, pageable);
-        
-        return transactions.getContent().stream()
-                .filter(t -> t.getTimestamp().isAfter(startOfDay))
-                .filter(t -> t.getType() == TransactionType.WITHDRAWAL || 
-                        (t.getType() == TransactionType.TRANSFER && t.getSourceAccount().getId().equals(accountId)))
-                .map(Transaction::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    public void validateSpendingLimits(Account account, BigDecimal amount, LocalDateTime timestamp) {
+        if (account.getSingleTransactionLimit() != null
+                && amount.compareTo(account.getSingleTransactionLimit()) > 0) {
+            throw new BadRequestException("Transaction exceeds the account's single-transaction spending limit");
+        }
+
+        LocalDate day = timestamp.toLocalDate();
+        LocalDateTime exclusiveEnd = timestamp.plusNanos(1);
+        if (account.getDailyLimit() != null) {
+            BigDecimal spent = calculateSpent(account.getId(), day.atStartOfDay(), exclusiveEnd);
+            if (spent.add(amount).compareTo(account.getDailyLimit()) > 0) {
+                throw new BadRequestException("Transaction exceeds the account's daily spending limit");
+            }
+        }
+        if (account.getMonthlyLimit() != null) {
+            BigDecimal spent = calculateSpent(account.getId(), day.withDayOfMonth(1).atStartOfDay(), exclusiveEnd);
+            if (spent.add(amount).compareTo(account.getMonthlyLimit()) > 0) {
+                throw new BadRequestException("Transaction exceeds the account's monthly spending limit");
+            }
+        }
     }
 
-    private BigDecimal calculateMonthlySpent(Long accountId) {
-        LocalDateTime startOfMonth = LocalDate.now().withDayOfMonth(1).atStartOfDay();
-        Pageable pageable = PageRequest.of(0, 1000);
-        Page<Transaction> transactions = transactionRepository.findByAccountIdOrderByTimestampDesc(accountId, pageable);
-        
-        return transactions.getContent().stream()
-                .filter(t -> t.getTimestamp().isAfter(startOfMonth))
-                .filter(t -> t.getType() == TransactionType.WITHDRAWAL || 
-                        (t.getType() == TransactionType.TRANSFER && t.getSourceAccount().getId().equals(accountId)))
-                .map(Transaction::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    private BigDecimal calculateSpent(Long accountId, LocalDateTime start, LocalDateTime end) {
+        return transactionRepository.sumOutgoingSpending(accountId, start, end,
+                List.of(TransactionType.WITHDRAWAL, TransactionType.TRANSFER));
     }
 
     private boolean isAdmin(User user) {

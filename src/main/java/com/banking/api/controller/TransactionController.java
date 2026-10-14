@@ -8,12 +8,12 @@ import com.banking.api.dto.response.TransactionResponse;
 import com.banking.api.service.TransactionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import com.banking.api.util.PaginationSupport;
 
 @RestController
 @RequestMapping("/api")
@@ -23,20 +23,26 @@ public class TransactionController {
     private final TransactionService transactionService;
 
     @PostMapping("/transactions/deposit")
-    public ResponseEntity<TransactionResponse> deposit(@Valid @RequestBody DepositRequest request) {
-        TransactionResponse response = transactionService.deposit(request);
+    public ResponseEntity<TransactionResponse> deposit(
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody DepositRequest request) {
+        TransactionResponse response = transactionService.deposit(request, idempotencyKey);
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
     @PostMapping("/transactions/withdraw")
-    public ResponseEntity<TransactionResponse> withdraw(@Valid @RequestBody WithdrawRequest request) {
-        TransactionResponse response = transactionService.withdraw(request);
+    public ResponseEntity<TransactionResponse> withdraw(
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody WithdrawRequest request) {
+        TransactionResponse response = transactionService.withdraw(request, idempotencyKey);
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
     @PostMapping("/transactions/transfer")
-    public ResponseEntity<TransactionResponse> transfer(@Valid @RequestBody TransferRequest request) {
-        TransactionResponse response = transactionService.transfer(request);
+    public ResponseEntity<TransactionResponse> transfer(
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody TransferRequest request) {
+        TransactionResponse response = transactionService.transfer(request, idempotencyKey);
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
@@ -45,7 +51,7 @@ public class TransactionController {
             @PathVariable Long accountId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = PaginationSupport.page(page, size);
         PagedResponse<TransactionResponse> transactions = transactionService.getTransactionHistory(accountId, pageable);
         return ResponseEntity.ok(transactions);
     }

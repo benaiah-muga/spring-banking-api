@@ -42,7 +42,7 @@ POST /api/auth/register
 {
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "tokenType": "Bearer",
-  "expiresIn": 86400000,
+  "expiresIn": 3600000,
   "user": {
     "id": 1,
     "fullName": "John Doe",
@@ -73,7 +73,7 @@ POST /api/auth/login
 {
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "tokenType": "Bearer",
-  "expiresIn": 86400000,
+  "expiresIn": 3600000,
   "user": {
     "id": 1,
     "fullName": "John Doe",
@@ -115,21 +115,31 @@ Authorization: Bearer <admin-token>
 
 **Response (200 OK):**
 ```json
-[
-  {
-    "id": 1,
-    "fullName": "John Doe",
-    "email": "john@example.com",
-    "role": "CUSTOMER"
-  },
-  {
-    "id": 2,
-    "fullName": "Admin User",
-    "email": "admin@example.com",
-    "role": "ADMIN"
-  }
-]
+{
+  "content": [
+    {
+      "id": 1,
+      "fullName": "John Doe",
+      "email": "john@example.com",
+      "role": "CUSTOMER"
+    },
+    {
+      "id": 2,
+      "fullName": "Admin User",
+      "email": "admin@example.com",
+      "role": "ADMIN"
+    }
+  ],
+  "pageNumber": 0,
+  "pageSize": 20,
+  "totalElements": 2,
+  "totalPages": 1,
+  "first": true,
+  "last": true
+}
 ```
+
+Page numbers start at zero. Page sizes must be positive and are capped at 100.
 
 ---
 
@@ -214,9 +224,11 @@ Authorization: Bearer <token>
 #### Get All Accounts (Admin Only)
 
 ```http
-GET /api/admin/accounts
+GET /api/admin/accounts?page=0&size=20
 Authorization: Bearer <admin-token>
 ```
+
+The response is paginated. Page numbers start at zero, page sizes must be positive, and the server caps page sizes at 100 across admin user, account, transaction, and audit-log collections. Account transaction history uses the same bounds. Negative page numbers and non-positive sizes return `400 Bad Request`.
 
 ---
 
@@ -227,7 +239,10 @@ Authorization: Bearer <admin-token>
 ```http
 POST /api/transactions/deposit
 Authorization: Bearer <token>
+Idempotency-Key: demo-deposit-001
 ```
+
+Use a new key for every operation. Retrying the same authenticated user's request with the same key and payload returns the original transaction. Reusing a key with a different payload returns `409 Conflict`. Include `Idempotency-Key` in the configured browser CORS allowed headers.
 
 **Request Body:**
 ```json
@@ -257,6 +272,7 @@ Authorization: Bearer <token>
 ```http
 POST /api/transactions/withdraw
 Authorization: Bearer <token>
+Idempotency-Key: demo-withdrawal-001
 ```
 
 **Request Body:**
@@ -284,6 +300,7 @@ Authorization: Bearer <token>
 ```http
 POST /api/transactions/transfer
 Authorization: Bearer <token>
+Idempotency-Key: demo-transfer-001
 ```
 
 **Request Body:**
@@ -322,6 +339,8 @@ Authorization: Bearer <token>
 **Query Parameters:**
 - `page` (default: 0) - Page number
 - `size` (default: 10) - Items per page
+
+Page numbers start at zero. Page sizes must be positive and are capped at 100. Negative page numbers or non-positive sizes return `400 Bad Request`.
 
 **Response (200 OK):**
 ```json
@@ -436,7 +455,7 @@ GET /api/health
 | Role | Permissions |
 |------|-------------|
 | CUSTOMER | Own profile, own accounts, own transactions |
-| ADMIN | All CUSTOMER permissions + view all users, accounts, transactions |
+| ADMIN | Customer read access where permitted, view all users/accounts/transactions, change account status, and review audit logs. Money movement still requires owning the source account. |
 
 ---
 
@@ -449,6 +468,6 @@ Currently not implemented. Consider adding for production deployments.
 ## Security Considerations
 
 1. **Password Hashing:** All passwords are hashed using BCrypt
-2. **JWT Tokens:** Tokens expire after 24 hours (configurable)
+2. **JWT Tokens:** Tokens expire after one hour by default and can be configured with `JWT_EXPIRATION` (milliseconds)
 3. **HTTPS:** Always use HTTPS in production
-4. **CORS:** Configured to accept requests from all origins (tighten for production)
+4. **CORS:** Configured for `http://localhost:3000` by default; production origins are set with `CORS_ALLOWED_ORIGINS`

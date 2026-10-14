@@ -1,7 +1,7 @@
 package com.banking.api.dto.request;
 
 import jakarta.validation.constraints.DecimalMin;
-import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Digits;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -15,15 +15,17 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 public class SetSpendingLimitRequest {
 
-    @NotNull(message = "Account ID is required")
     private Long accountId;
 
     @DecimalMin(value = "0.00", message = "Daily limit must be zero or positive")
+    @Digits(integer = 17, fraction = 2)
     private BigDecimal dailyLimit;
 
     @DecimalMin(value = "0.00", message = "Monthly limit must be zero or positive")
+    @Digits(integer = 17, fraction = 2)
     private BigDecimal monthlyLimit;
 
     @DecimalMin(value = "0.00", message = "Transaction limit must be zero or positive")
+    @Digits(integer = 17, fraction = 2)
     private BigDecimal singleTransactionLimit;
 }

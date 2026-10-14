@@ -17,7 +17,7 @@
 
 ## System Overview
 
-The Banking System API is a RESTful web service built with Spring Boot 3.2, designed to handle core banking operations including user authentication, account management, and financial transactions.
+The Banking System API is a portfolio banking simulation built with Spring Boot 3.2. Balances use synthetic funds; the service does not connect to banks or payment networks.
 
 ### Key Capabilities
 
@@ -26,6 +26,9 @@ The Banking System API is a RESTful web service built with Spring Boot 3.2, desi
 | User Management | Registration, authentication, profile management |
 | Account Management | Create/view accounts, balance inquiries |
 | Transactions | Deposits, withdrawals, transfers with atomicity |
+| Retry safety | Durable per-user idempotency records return the original transaction on request retry |
+| Spending controls | Single-transaction, daily, and monthly limits enforced during withdrawals and transfers |
+| Statements | Date-range opening and closing balances are calculated from the transaction ledger |
 | Security | JWT-based auth, role-based access control (RBAC) |
 | Admin Functions | View all users, accounts, and transactions |
 
@@ -74,16 +77,17 @@ The Banking System API is a RESTful web service built with Spring Boot 3.2, desi
 ```
 com.banking.api
 ├── config/           # Security, OpenAPI configuration
-├── controller/       # REST API endpoints (5 controllers)
+├── controller/       # REST API endpoints (6 controllers)
 ├── dto/
-│   ├── request/      # Incoming data validation (6 DTOs)
-│   └── response/     # Outgoing data (7 DTOs)
-├── entity/           # JPA entities (3 entities)
+│   ├── request/      # Incoming data validation
+│   └── response/     # Outgoing data
+├── entity/           # JPA entities, including durable idempotency records
 ├── enums/            # Role, AccountType, AccountStatus, TransactionType
 ├── exception/        # Custom exceptions + GlobalExceptionHandler
 ├── repository/       # Spring Data JPA interfaces
 ├── security/         # JWT service, filter, UserDetailsService
-└── service/          # Business logic layer
+├── service/          # Business logic layer
+└── util/             # Shared request helpers, including pagination bounds
 ```
 
 ---
@@ -198,6 +202,8 @@ com.banking.api
 | password | VARCHAR(255) | String | NOT NULL (BCrypt) |
 | role | VARCHAR(20) | Enum | CHECK (ADMIN, CUSTOMER) |
 | timestamp | TIMESTAMP | LocalDateTime | NOT NULL |
+| amount | NUMERIC(19,2) | BigDecimal | NOT NULL, greater than zero |
+| idempotency_key | VARCHAR(128) | String | UNIQUE with user_id |
 
 ---
 
@@ -248,34 +254,11 @@ public class AccountResponse {
 
 ### Atomic Transfer Implementation
 
-```java
-@Transactional(isolation = Isolation.SERIALIZABLE)
-public TransactionResponse transfer(TransferRequest request) {
-    // 1. Acquire pessimistic locks in consistent order (prevent deadlock)
-    Account source = accountRepository.findByIdWithLock(sourceId);
-    Account dest = accountRepository.findByIdWithLock(destId);
-    
-    // 2. Validate sufficient funds
-    if (source.getBalance().compareTo(amount) < 0) {
-        throw new InsufficientFundsException(amount, source.getBalance());
-    }
-    
-    // 3. Execute atomic update
-    source.setBalance(source.getBalance().subtract(amount));
-    dest.setBalance(dest.getBalance().add(amount));
-    
-    // 4. Create audit record
-    Transaction tx = Transaction.builder()
-            .type(TransactionType.TRANSFER)
-            .amount(amount)
-            .sourceAccount(source)
-            .destinationAccount(dest)
-            .referenceNumber(UUID.randomUUID().toString())
-            .build();
-    
-    return TransactionResponse.fromEntity(transactionRepository.save(tx));
-}
-```
+Money-changing service methods use Spring's default `READ_COMMITTED` isolation and a database transaction. They first lock the idempotency stripe for the authenticated user and request key, then lock the source and destination accounts in ascending account ID order. The account locks serialize competing balance changes, and the shared ordering prevents opposing transfers from acquiring account locks in different orders.
+
+Within that transaction, the service checks ownership, account status, spending limits, and available funds. It updates both balances and writes the transaction, audit event, and idempotency record together. If any step fails, the database rolls back the entire operation. Repeating a successful request with the same user, key, and payload returns the original transaction; reusing that key for a different operation or payload returns `409 Conflict`.
+
+The implementation uses `READ_COMMITTED`, not `SERIALIZABLE`: account row locks provide the required balance serialization, while the idempotency stripe serializes duplicate keys before the transaction reads a prior result.
 
 ### Pessimistic Locking Query
 
@@ -342,11 +325,13 @@ public class GlobalExceptionHandler {
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | localhost:5432/banking_db |
-| `DATABASE_USERNAME` | DB username | postgres |
-| `DATABASE_PASSWORD` | DB password | postgres |
-| `JWT_SECRET` | HMAC signing key (256-bit) | [dev key] |
-| `JWT_EXPIRATION` | Token TTL in milliseconds | 86400000 (24h) |
+| `DATABASE_URL` | PostgreSQL connection string | Required for `prod` |
+| `DATABASE_USERNAME` | DB username | Required for `prod` |
+| `DATABASE_PASSWORD` | DB password | Required for `prod` |
+| `JWT_SECRET` | Base64 encoded HMAC signing key | Required for `prod` |
+| `JWT_EXPIRATION` | Token lifetime in milliseconds | 3600000 (1h) |
+| `APP_TIME_ZONE` | Timezone used for daily and monthly limits | UTC |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated browser origins | http://localhost:3000 |
 | `PORT` | Server port | 8080 |
 
 ### application.yml Structure
@@ -359,41 +344,32 @@ spring:
     password: ${DATABASE_PASSWORD}
   jpa:
     hibernate:
-      ddl-auto: update  # Use 'validate' in production
+      ddl-auto: validate
     show-sql: false
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 1
 
 jwt:
   secret: ${JWT_SECRET}
-  expiration: ${JWT_EXPIRATION:86400000}
+  expiration: ${JWT_EXPIRATION:3600000}
 ```
+
+On a non-empty database without Flyway history, Flyway marks the existing schema at version 1 and runs the second migration. Back up and inspect existing data first; constraints in that migration intentionally fail if current data contains negative balances or non-positive transactions.
 
 ---
 
 ## Deployment Guide
 
-### Render Deployment
-
-1. **Create Web Service** on Render
-2. **Connect GitHub Repository**
-3. **Configure Environment Variables** (see table above)
-4. **Build Command:** `mvn clean package -DskipTests`
-5. **Start Command:** `java -jar target/banking-api-1.0.0.jar`
-
-### Neon PostgreSQL Setup
-
-1. Create a Neon project
-2. Copy connection string
-3. Set `DATABASE_URL` with `?sslmode=require` suffix
-
-### Docker Deployment
+### Local PostgreSQL with Docker Compose
 
 ```dockerfile
-FROM eclipse-temurin:17-jdk-alpine
-WORKDIR /app
-COPY target/banking-api-1.0.0.jar app.jar
-EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+cp .env.example .env
+docker compose up --build
 ```
+
+Replace the environment file placeholders before starting. CI runs `mvn verify`; PostgreSQL integration tests use Testcontainers.
 
 ---
 
@@ -406,6 +382,7 @@ ENTRYPOINT ["java", "-jar", "app.jar"]
 | Pagination | PagedResponse for transaction history |
 | Lazy Loading | FetchType.LAZY on entity relationships |
 | Pessimistic Locking | Prevents race conditions in transfers |
+| Idempotency lock stripes | Serialize matching retry keys across application instances |
 | Index on account_number | Unique constraint creates index |
 | Connection Pooling | HikariCP (Spring Boot default) |
 

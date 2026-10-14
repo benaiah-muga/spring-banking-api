@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Run unit and PostgreSQL integration tests
+        env:
+          JWT_SECRET: bG9jYWwtdGVzdC1vbmx5LXByb2R1Y3Rpb24ta2V5LWRvLW5vdC1yZXVzZS0wMQ==
+        run: mvn --batch-mode --no-transfer-progress verify

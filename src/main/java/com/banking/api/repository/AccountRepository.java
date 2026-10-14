@@ -11,6 +11,8 @@ import org.springframework.stereotype.Repository;
 import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
+import java.math.BigDecimal;
+import com.banking.api.enums.AccountStatus;
 
 @Repository
 public interface AccountRepository extends JpaRepository<Account, Long> {
@@ -22,6 +24,11 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     Optional<Account> findByAccountNumber(String accountNumber);
 
     boolean existsByAccountNumber(String accountNumber);
+
+    long countByStatus(AccountStatus status);
+
+    @Query("SELECT COALESCE(SUM(a.balance), 0) FROM Account a")
+    BigDecimal sumBalances();
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT a FROM Account a WHERE a.id = :id")

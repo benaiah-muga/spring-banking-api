@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 @Service
@@ -34,14 +35,15 @@ public class UserService {
     @Transactional
     public AuthResponse register(RegisterRequest request) {
         // Check if email already exists
-        if (userRepository.existsByEmail(request.getEmail())) {
+        String normalizedEmail = request.getEmail().trim().toLowerCase(Locale.ROOT);
+        if (userRepository.existsByEmail(normalizedEmail)) {
             throw new BadRequestException("Email already registered");
         }
 
         // Create new user
         User user = User.builder()
                 .fullName(request.getFullName())
-                .email(request.getEmail().toLowerCase())
+                .email(normalizedEmail)
                 .password(passwordEncoder.encode(request.getPassword()))
                 .role(Role.CUSTOMER)
                 .build();
@@ -62,13 +64,13 @@ public class UserService {
         // Authenticate user
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
-                        request.getEmail().toLowerCase(),
+                        request.getEmail().trim().toLowerCase(Locale.ROOT),
                         request.getPassword()
                 )
         );
 
         // Get user
-        User user = userRepository.findByEmail(request.getEmail().toLowerCase())
+        User user = userRepository.findByEmail(request.getEmail().trim().toLowerCase(Locale.ROOT))
                 .orElseThrow(() -> new ResourceNotFoundException("User", "email", request.getEmail()));
 
         // Generate JWT token
