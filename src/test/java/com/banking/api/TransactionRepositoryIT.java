@@ -4,6 +4,7 @@ import com.banking.api.entity.Account;
 import com.banking.api.entity.Transaction;
 import com.banking.api.entity.User;
 import com.banking.api.dto.request.DepositRequest;
+import com.banking.api.dto.request.CreatePaymentOrderRequest;
 import com.banking.api.dto.request.WithdrawRequest;
 import com.banking.api.dto.response.TransactionResponse;
 import com.banking.api.exception.ConflictException;
@@ -14,9 +15,11 @@ import com.banking.api.enums.Role;
 import com.banking.api.enums.TransactionType;
 import com.banking.api.repository.AccountRepository;
 import com.banking.api.repository.IdempotencyRecordRepository;
+import com.banking.api.repository.PaymentOrderRepository;
 import com.banking.api.repository.TransactionRepository;
 import com.banking.api.repository.UserRepository;
 import com.banking.api.service.TransactionService;
+import com.banking.api.service.ErpPaymentOrderService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -38,6 +41,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -60,7 +64,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class TransactionRepositoryIT {
 
     @Container
-    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine");
+    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine")
+            .withStartupTimeout(Duration.ofMinutes(3));
 
     @DynamicPropertySource
     static void databaseProperties(DynamicPropertyRegistry registry) {
@@ -75,16 +80,62 @@ class TransactionRepositoryIT {
     @Autowired AccountRepository accountRepository;
     @Autowired TransactionRepository transactionRepository;
     @Autowired IdempotencyRecordRepository idempotencyRecordRepository;
+    @Autowired PaymentOrderRepository paymentOrderRepository;
     @Autowired TransactionService transactionService;
+    @Autowired ErpPaymentOrderService erpPaymentOrderService;
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
 
     @BeforeEach
     void cleanDatabase() {
         idempotencyRecordRepository.deleteAll();
+        paymentOrderRepository.deleteAll();
         transactionRepository.deleteAll();
         accountRepository.deleteAll();
         userRepository.deleteAll();
+    }
+
+    @Test
+    void concurrentErpPaymentRetriesSettleOnceAndPostOneDebit() throws Exception {
+        Account account = createAccount();
+        account.setBalance(new BigDecimal("5000.00"));
+        accountRepository.save(account);
+        User owner = account.getUser();
+        CreatePaymentOrderRequest request = CreatePaymentOrderRequest.builder()
+                .sourceAccountId(account.getId())
+                .erpPaymentReference("PAY-" + UUID.randomUUID())
+                .invoiceReference("INV-1001")
+                .beneficiaryName("Northwind Supplies")
+                .beneficiaryAccount("SIM-001-9284")
+                .amount(new BigDecimal("1250.00"))
+                .currency("USD")
+                .build();
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        String idempotencyKey = "chaste-payment-" + UUID.randomUUID();
+        try {
+            Future<?> firstFuture = executor.submit(() -> runAsOwner(owner, ready, start,
+                    () -> erpPaymentOrderService.create(request, idempotencyKey)));
+            Future<?> retryFuture = executor.submit(() -> runAsOwner(owner, ready, start,
+                    () -> erpPaymentOrderService.create(request, idempotencyKey)));
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            var first = (com.banking.api.dto.response.PaymentOrderResponse) firstFuture.get(15, TimeUnit.SECONDS);
+            var retry = (com.banking.api.dto.response.PaymentOrderResponse) retryFuture.get(15, TimeUnit.SECONDS);
+
+            assertThat(retry.getId()).isEqualTo(first.getId());
+            assertThat(first.getStatus().name()).isEqualTo("SETTLED");
+            assertThat(first.getTransactionReference()).isEqualTo(retry.getTransactionReference());
+            assertThat(accountRepository.findById(account.getId()).orElseThrow().getBalance())
+                    .isEqualByComparingTo("3750.00");
+            assertThat(paymentOrderRepository.count()).isEqualTo(1);
+            assertThat(transactionRepository.count()).isEqualTo(1);
+            assertThat(idempotencyRecordRepository.count()).isEqualTo(1);
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     @Test

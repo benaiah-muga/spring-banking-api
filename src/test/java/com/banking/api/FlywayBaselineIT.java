@@ -15,6 +15,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.time.Duration;
+
 import java.sql.DriverManager;
 import java.sql.Statement;
 
@@ -27,7 +29,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class FlywayBaselineIT {
 
     @Container
-    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine");
+    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine")
+            .withStartupTimeout(Duration.ofMinutes(3));
 
     @Autowired JdbcTemplate jdbcTemplate;
 
@@ -44,13 +47,15 @@ class FlywayBaselineIT {
     void existingSchemaIsBaselinedAndDataIsKeptWhileTheSafetyMigrationRuns() {
         Integer users = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM users", Integer.class);
         Integer lockStripes = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM idempotency_locks", Integer.class);
+        Integer paymentOrders = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM payment_orders", Integer.class);
         String currentVersion = jdbcTemplate.queryForObject(
                 "SELECT version FROM flyway_schema_history WHERE success = TRUE ORDER BY installed_rank DESC LIMIT 1",
                 String.class);
 
         assertThat(users).isEqualTo(1);
         assertThat(lockStripes).isEqualTo(64);
-        assertThat(currentVersion).isEqualTo("2");
+        assertThat(paymentOrders).isZero();
+        assertThat(currentVersion).isEqualTo("3");
     }
 
     static class ExistingSchemaInitializer implements ApplicationContextInitializer<ConfigurableApplicationContext> {

@@ -64,6 +64,7 @@ public class SecurityConfig {
                         // Customer endpoints (also accessible by admin)
                         .requestMatchers("/api/accounts/**").hasAnyRole("CUSTOMER", "ADMIN")
                         .requestMatchers("/api/transactions/**").hasAnyRole("CUSTOMER", "ADMIN")
+                        .requestMatchers("/api/v1/erp/**").hasAnyRole("CUSTOMER", "ADMIN")
                         .requestMatchers("/api/users/me").hasAnyRole("CUSTOMER", "ADMIN")
                         
                         // All other requests require authentication

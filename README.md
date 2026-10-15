@@ -93,10 +93,10 @@ curl -X POST http://localhost:8080/api/transactions/deposit \
   -d '{"accountId":1,"amount":1000.00,"description":"Demo funding"}'
 ```
 
-Transfer requests, limits, authorization, and error behavior are documented in [API_DOCUMENTATION.md](API_DOCUMENTATION.md). Architecture and database details are in [TECHNICAL_DOCUMENTATION.md](TECHNICAL_DOCUMENTATION.md).
+Transfer requests, limits, authorization, and error behavior are documented in [API_DOCUMENTATION.md](API_DOCUMENTATION.md). The ChasteBusiness OS payment-order API and simulated supplier payout workflow are described in [docs/ERP_PAYMENT_API.md](docs/ERP_PAYMENT_API.md). Architecture and database details are in [TECHNICAL_DOCUMENTATION.md](TECHNICAL_DOCUMENTATION.md).
 
 ## Scope and limitations
 
-The service is single-currency and uses simulated funding. It does not implement a double-entry ledger, payment provider, token refresh or revocation, or a bank compliance program. See [PROJECT_ROADMAP.md](PROJECT_ROADMAP.md) for planned work.
+The service is single-currency USD and uses simulated funding. ERP payment orders settle synchronously through a simulated rail. The service does not implement a double-entry ledger, external payment provider, token refresh or revocation, or a bank compliance program. See [PROJECT_ROADMAP.md](PROJECT_ROADMAP.md) for planned work.
 
 Author: Muganzi Benaiah
